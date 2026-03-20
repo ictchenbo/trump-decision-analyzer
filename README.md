@@ -174,11 +174,11 @@ cd backend
 python -m app.main
 
 # 终端2: 启动前端
-cd ../frontend
+cd frontend
 npm run dev
 
 # 终端3: 启动定时数据采集 (可选)
-cd ../backend
+cd backend
 python -m app.ingestion.run_ingestion
 ```
 
