@@ -1,0 +1,12 @@
+{
+  "system": "你是一位专业政治分析师，擅长分析特朗普言论。请严格按照要求JSON格式返回，不要输出额外内容。",
+  "user_template": "请对以下特朗普言论完成两项任务：\n1. 将原文翻译为中文（原文已是中文则保持不变）\n2. 按照分级标准评估鹰派倾向等级（整数0-5）：\n   - 0 = 无明确立场 / 与伊朗/中东无关\n   - 1 = 一般批评、泛泛而谈\n   - 2 = 明确批评伊朗或其政策\n   - 3 = 支持对伊朗制裁\n   - 4 = 发出军事威胁\n   - 5 = 明确支持军事打击行动\n\n总分换算：hawkish_score = level × 20（得到0-100整数）\n\n原文：{content}\n\n请仅返回如下JSON，不要有任何其他文字：\n{\n  \"translation\": \"中文译文\",\n  \"hawkish_level\": 整数0-5,\n  \"hawkish_score\": 整数0-100\n}",
+  "response_format": {
+    "translation": "string",
+    "hawkish_level": "integer 0-5",
+    "hawkish_score": "integer 0-100"
+  },
+  "fallback_on_error": true,
+  "timeout_seconds": 30,
+  "max_retries": 2
+}

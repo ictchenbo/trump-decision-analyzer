@@ -1,0 +1,85 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg-base:    #0b0f1a;
+  --bg-card:    #111827;
+  --bg-card2:   #1a2235;
+  --border:     #1e2d45;
+  --text-primary:   #c7ced6;
+  --text-secondary: #3d4144;
+  --text-muted:     #4a5a6e;
+  --accent:     #3b82f6;
+  --accent-glow: rgba(59,130,246,0.15);
+  --up:    #ef4444;
+  --down:  #22c55e;
+  --stable: #64748b;
+  --warn:  #f59e0b;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: 'PingFang SC', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 24px; /* 原 16px 加大 50% */
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* ── Element Plus 全局覆盖 ── */
+.el-card {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.4) !important;
+  color: var(--text-primary) !important;
+}
+
+.el-card__header {
+  border-bottom: 1px solid var(--border) !important;
+  padding: 14px 18px !important;
+  font-size: 26px; /* 原 17px 加大 50% */
+  font-weight: 700;
+  color: var(--text-primary) !important;
+  letter-spacing: 0.5px;
+}
+
+.el-card__body {
+  padding: 16px !important;
+}
+
+.el-main {
+  background: var(--bg-base) !important;
+}
+
+.el-progress-bar__outer {
+  background: var(--bg-card2) !important;
+}
+
+.el-tag {
+  border: none !important;
+  font-size: 17px !important; /* 原 11px 加大 50% */
+  padding: 4px 10px !important;
+  border-radius: 4px !important;
+}
+
+.el-tag--danger  { background: rgba(239,68,68,0.15)  !important; color: #ef4444 !important; }
+.el-tag--success { background: rgba(34,197,94,0.15)  !important; color: #22c55e !important; }
+.el-tag--info    { background: rgba(100,116,139,0.15) !important; color: #94a3b8 !important; }
+
+/* scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* echarts dark 主题背景透明修复 */
+canvas { background: transparent !important; }
