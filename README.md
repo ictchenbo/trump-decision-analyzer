@@ -56,6 +56,20 @@
 | **鹰派→市场** | 鹰派评分 | 市场指标 | 特朗普言论是否影响当日市场？ |
 | **鹰派滞后1天→市场** | 昨日鹰派评分 | 今日市场指标 | 特朗普言论是否对次日市场有前瞻性影响？ |
 
+## 🖼️ 界面预览
+
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="仪表盘" width="800">
+  <br>
+  <em>📊 数据分析仪表盘 - 实时展示鹰派评分走势和市场指标</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/regression.png" alt="回归分析" width="800">
+  <br>
+  <em>📈 回归分析界面 - 双向因果分析，支持滞后效应检验</em>
+</p>
+
 ## 🗺️ 项目结构
 
 ```
@@ -63,28 +77,41 @@ trump-decision-analyzer/
 ├── backend/                      # 后端代码
 │   ├── app/
 │   │   ├── api/                 # API 路由
-│   │   │   ├── analysis.py     # 相关性分析接口 (核心修改处)
+│   │   │   ├── analysis.py     # 相关性分析接口
 │   │   │   ├── data.py          # 数据查询接口
 │   │   │   ├── alerts.py        # 预警接口
-│   │   │   └── ...
+│   │   │   └── trump_statements.py  # 言论查询
 │   │   ├── core/                # 核心配置
-│   │   │   ├── config.py        # 配置
+│   │   │   ├── config.py        # 环境配置
 │   │   │   └── database.py      # MongoDB 连接
 │   │   ├── ingestion/           # 数据采集模块
 │   │   │   ├── trump_statement_ingestor.py  # Truth Social 采集
-│   │   │   ├── factor_score_ingestor.py     # 因子得分计算
+│   │   │   ├── factor_score_ingestor.py     # 市场因子采集
 │   │   │   ├── llm_enricher.py              # LLM 鹰派评分
 │   │   │   └── run_ingestion.py            # 定时采集任务
 │   │   ├── models/              # 数据模型
+│   │   ├── ingestion/prompts/  # LLM 提示词
 │   │   └── main.py              # FastAPI 入口
+│   ├── .env.example             # 环境变量示例
 │   └── requirements.txt
-├── frontend/                 # 前端代码
-│   ├── views/
-│   │   └── Regression.vue  # 决策建模页面
-│   |   |__ App.vue             # 主应用
-│   |   |__ ...
+├── frontend/                     # 前端代码
+│   ├── src/
+│   │   ├── views/
+│   │   │   ├── Dashboard.vue     # 仪表盘
+│   │   │   ├── Regression.vue    # 回归分析页面
+│   │   │   ├── DecisionPressure.vue  # 决策压力指数
+│   │   │   ├── TrumpStatements.vue   # 言论列表
+│   │   │   └── WarPeace.vue     # 战争和平指数
+│   │   ├── api/                 # API 调用
+│   │   ├── components/          # 公共组件
+│   │   ├── models/             # 类型定义
+│   │   ├── router/             # 路由配置
+│   │   └── App.vue             # 主应用
 │   ├── package.json
-│   └── vite.config.ts
+│   ├── vite.config.ts
+│   └── tsconfig.json
+├── vibe-design/                 # 产品设计文档
+├── start-all.bat               # Windows 一键启动脚本
 └── README.md
 ```
 
@@ -113,7 +140,7 @@ pip install -r requirements.txt
 
 3. **安装前端依赖**
 ```bash
-cd ../src/frontend
+cd ../frontend
 npm install
 ```
 
@@ -147,17 +174,17 @@ cd backend
 python -m app.main
 
 # 终端2: 启动前端
-cd src/frontend
+cd ../frontend
 npm run dev
 
 # 终端3: 启动定时数据采集 (可选)
-cd backend
+cd ../backend
 python -m app.ingestion.run_ingestion
 ```
 
 7. **访问应用**
 
-- 前端地址：http://localhost:5173
+- 前端地址：http://localhost:8080
 - 后端API文档：http://localhost:8000/docs
 
 ## 📈 使用示例
@@ -202,8 +229,13 @@ python -m app.ingestion.run_ingestion
 3. **分析方法**：对每个 X 做一元线性回归 Y ~ X，报告相关系数 r 和 R²
 4. **双向分析**：支持 X 和 Y 互换，检验反向因果
 
-## 🛠️ 最近更新 (2026-03-20)
+## 🛠️ 更新日志
 
+### 2026-03-21
+- ✅ 完善 `.gitignore`，忽略不适合提交的本地文件
+- ✅ 整理项目结构，准备开源发布
+
+### 2026-03-20
 - ✅ 移除了原横轴为X的散点图，只保留时间趋势图，界面更简洁
 - ✅ **新增 XY 互换分析模式**：支持鹰派评分作为X，市场指标作为Y
 - ✅ **新增鹰派滞后1天分析**：研究昨日鹰派言论对今日市场的影响
