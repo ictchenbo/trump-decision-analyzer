@@ -59,16 +59,23 @@
 ## 🖼️ 界面预览
 
 <p align="center">
-  <img src="docs/images/dashboard.png" alt="仪表盘" width="800">
+  <img src="vibe-design/mod1.png" alt="回归分析" width="800">
+  <br>
+  <em>📈 回归分析界面 - 双向因果分析，支持滞后效应检验</em>
+</p>
+
+<p align="center">
+  <img src="vibe-design/mod2.png" alt="言论分析" width="800">
+  <br>
+  <em>📊 言论分析界面 - 特朗普最新言论查看浏览 </em>
+</p>
+
+<p align="center">
+  <img src="vibe-design/mod3.png" alt="仪表盘" width="800">
   <br>
   <em>📊 数据分析仪表盘 - 实时展示鹰派评分走势和市场指标</em>
 </p>
 
-<p align="center">
-  <img src="docs/images/regression.png" alt="回归分析" width="800">
-  <br>
-  <em>📈 回归分析界面 - 双向因果分析，支持滞后效应检验</em>
-</p>
 
 ## 🗺️ 项目结构
 
