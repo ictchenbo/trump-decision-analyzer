@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import * as echarts from 'echarts'
+import dayjs from 'dayjs'
 import request from '../utils/request'
 
 interface RegressionPoint {
@@ -138,20 +139,44 @@ const renderTimeChart = async () => {
 
   if (!timeChart) timeChart = echarts.init(dom, 'dark')
 
-  // 按日期排序准备数据
-  const sortedPoints = [...ind.points].sort((a, b) => a.date.localeCompare(b.date))
-  const dates = sortedPoints.map(p => p.date.slice(5)) // 只显示 MM-DD
-  const xData = sortedPoints.map(p => p.x)
-  const yData = sortedPoints.map(p => p.y)
+  // 整理已有数据
+  const pointMap: Record<string, {x: number; y: number}> = {}
+  ind.points.forEach(p => {
+    pointMap[p.date] = {x: p.x, y: p.y}
+  })
 
-  // 对X和Y数据都做归一化到 0-100 方便同图展示
-  const xMin = Math.min(...xData)
-  const xMax = Math.max(...xData)
-  const xNorm = xData.map(x => (x - xMin) / (xMax - xMin) * 100)
+  // 生成从2026-02-28到今天的完整日期序列
+  const startDate = dayjs('2026-02-28')
+  const endDate = dayjs()
+  const daysDiff = endDate.diff(startDate, 'day')
 
-  const yMin = Math.min(...yData)
-  const yMax = Math.max(...yData)
-  const yNorm = yData.map(y => (y - yMin) / (yMax - yMin) * 100)
+  const fullDates: string[] = []
+  const fullX: (number | null)[] = []
+  const fullY: (number | null)[] = []
+
+  for (let i = 0; i <= daysDiff; i++) {
+    const currentDate = startDate.add(i, 'day')
+    const dateKey = currentDate.format('YYYY-MM-DD')
+    fullDates.push(dateKey.slice(5)) // 只显示 MM-DD
+    if (pointMap[dateKey]) {
+      fullX.push(pointMap[dateKey].x)
+      fullY.push(pointMap[dateKey].y)
+    } else {
+      fullX.push(null)
+      fullY.push(null)
+    }
+  }
+
+  // 对X和Y数据都做归一化到 0-100 方便同图展示（跳过null）
+  const validX = fullX.filter(v => v != null) as number[]
+  const validY = fullY.filter(v => v != null) as number[]
+  const xMin = Math.min(...validX)
+  const xMax = Math.max(...validX)
+  const xNorm = fullX.map(v => v == null ? null : (v - xMin) / (xMax - xMin) * 100)
+
+  const yMin = Math.min(...validY)
+  const yMax = Math.max(...validY)
+  const yNorm = fullY.map(v => v == null ? null : (v - yMin) / (yMax - yMin) * 100)
 
   // 根据分析模式确定图例名称
   const xName = ind.label
@@ -175,11 +200,11 @@ const renderTimeChart = async () => {
       top: 30,
       textStyle: { color: '#e2e8f0' },
     },
-    grid: { left: 50, right: 20, top: 60, bottom: 50 },
+    grid: { left: 50, right: 20, top: 60, bottom: 80 },
     xAxis: {
       type: 'category',
-      data: dates,
-      axisLabel: { color: '#7a90a8', fontSize: 15 },
+      data: fullDates,
+      axisLabel: { color: '#7a90a8', fontSize: 13, rotate: 45 },
       axisLine: { lineStyle: { color: '#2d3f55' } },
     },
     yAxis: {
@@ -199,6 +224,7 @@ const renderTimeChart = async () => {
         name: xName,
         type: 'line',
         data: xNorm,
+        connectNulls: true,
         lineStyle: { width: 2, color: '#3b82f6' },
         symbol: 'circle',
         symbolSize: 6,
@@ -208,6 +234,7 @@ const renderTimeChart = async () => {
         name: yName,
         type: 'line',
         data: yNorm,
+        connectNulls: true,
         lineStyle: { width: 2, color: '#ef4444' },
         symbol: 'circle',
         symbolSize: 6,
@@ -323,12 +350,12 @@ const indicatorHints: Record<string, { meaning: string; impact: string }> = {
     impact: '油价大涨→国内通胀压力→特朗普倾向采取强硬政策打压油价'
   },
   'hawkish_avg_hawkish': {
-    meaning: '特朗普言论鹰派评分均值',
-    impact: '鹰派评分越高→特朗普对伊朗态度越强硬→预期影响市场风险偏好'
+    meaning: '特朗普言论政策评分均值',
+    impact: '政策评分越高→特朗普对伊朗态度越强硬→预期影响市场风险偏好'
   },
   'hawkish_max_hawkish': {
-    meaning: '特朗普言论鹰派评分最大值',
-    impact: '单日最高鹰派评分越高→特朗普当日最强硬表态→对市场的冲击可能更大'
+    meaning: '特朗普言论政策评分最大值',
+    impact: '单日最高政策评分越高→特朗普当日最强硬表态→对市场的冲击可能更大'
   },
   'hawkish_ratio_hawkish': {
     meaning: '当日鹰派帖子占比',
@@ -343,12 +370,12 @@ const indicatorHints: Record<string, { meaning: string; impact: string }> = {
     impact: '鹰派词汇使用越多→言论强硬程度越高→对市场风险情绪影响越大'
   },
   'hawkish_avg_hawkish_lag1': {
-    meaning: '特朗普言论鹰派评分均值(滞后1天)',
-    impact: '昨日鹰派评分→分析对今日市场的影响，检验鹰派言论是否领先市场变化'
+    meaning: '特朗普言论政策评分均值(滞后1天)',
+    impact: '昨日政策评分→分析对今日市场的影响，检验鹰派言论是否领先市场变化'
   },
   'hawkish_max_hawkish_lag1': {
-    meaning: '特朗普言论鹰派评分最大值(滞后1天)',
-    impact: '昨日最高鹰派评分→分析对今日市场的滞后影响'
+    meaning: '特朗普言论政策评分最大值(滞后1天)',
+    impact: '昨日最高政策评分→分析对今日市场的滞后影响'
   },
   'hawkish_ratio_hawkish_lag1': {
     meaning: '当日鹰派帖子占比(滞后1天)',
@@ -385,14 +412,14 @@ onMounted(fetchData)
         <div class="page-desc">
           <template v-if="analysisMode === 'original'">
             基于 {{ data.since }} 以来 {{ data.days }} 个交易日数据，分析关键市场指标（X）与
-            Truth Social 涉伊朗/石油言论鹰派评分（Y）的线性回归关系。研究市场状况如何影响特朗普言论倾向。
+            Truth Social 涉伊朗/石油言论政策评分（Y）的线性回归关系。研究市场状况如何影响特朗普言论倾向。
           </template>
           <template v-else-if="analysisMode === 'swap'">
-            基于 {{ data.since }} 以来 {{ data.days }} 个交易日数据，分析鹰派评分（X）与
+            基于 {{ data.since }} 以来 {{ data.days }} 个交易日数据，分析政策评分（X）与
             关键市场指标（Y）的线性回归关系。研究当日特朗普鹰派言论对当日市场的影响。
           </template>
           <template v-else-if="analysisMode === 'hawkish_lag1'">
-            基于 {{ data.since }} 以来 {{ data.days }} 个交易日数据，分析滞后1天鹰派评分（X）与
+            基于 {{ data.since }} 以来 {{ data.days }} 个交易日数据，分析滞后1天政策评分（X）与
             关键市场指标（Y）的线性回归关系。研究昨日特朗普鹰派言论对今日市场的影响。
           </template>
           点击指标查看指标含义与政策影响分析。
@@ -403,9 +430,9 @@ onMounted(fetchData)
           <div class="mode-selector">
             <span class="mode-label">分析模式：</span>
             <el-radio-group v-model="analysisMode" @change="changeAnalysisMode" size="small">
-              <el-radio-button label="original">市场→鹰派</el-radio-button>
-              <el-radio-button label="swap">鹰派→市场</el-radio-button>
-              <el-radio-button label="hawkish_lag1">鹰派滞后1天→市场</el-radio-button>
+              <el-radio-button label="original">市场→政策</el-radio-button>
+              <el-radio-button label="swap">政策→市场</el-radio-button>
+              <el-radio-button label="hawkish_lag1">政策→滞后1天市场</el-radio-button>
             </el-radio-group>
           </div>
 
@@ -528,7 +555,7 @@ onMounted(fetchData)
               <span class="equation-label">回归方程：</span>
               <span class="equation-text">
                 <template v-if="analysisMode === 'original'">
-                  鹰派评分 = {{ selected.a > 0 ? '+' : '' }}{{ selected.a.toFixed(4) }} × {{ selected.label }}
+                  政策评分 = {{ selected.a > 0 ? '+' : '' }}{{ selected.a.toFixed(4) }} × {{ selected.label }}
                   {{ selected.b >= 0 ? '+' : '' }}{{ selected.b.toFixed(2) }}
                 </template>
                 <template v-else>

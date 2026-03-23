@@ -26,7 +26,7 @@ html, body {
   background: var(--bg-base);
   color: var(--text-primary);
   font-family: 'PingFang SC', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 24px; /* 原 16px 加大 50% */
+  font-size: 20px; /* 原 16px 加大 50% */
   -webkit-font-smoothing: antialiased;
 }
 

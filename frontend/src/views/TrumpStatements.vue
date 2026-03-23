@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { ElTable, ElTableColumn, ElTag, ElButton, ElCard, ElPagination, ElSelect, ElOption, ElDatePicker, ElInput, ElMessage } from 'element-plus'
-import { getTrumpStatements, deleteTrumpStatement } from '../api/trump_statements'
-import type { TrumpStatement } from '../models/trump_statement'
+import { getTrumpStatements, deleteTrumpStatement, getHawkishDaily } from '../api/trump_statements'
+import type { TrumpStatement, HawkishDailyData } from '../models/trump_statement'
 import dayjs from 'dayjs'
+import * as echarts from 'echarts'
 
 const statementList = ref<TrumpStatement[]>([])
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
+let hawkishChart: echarts.ECharts | null = null
 
 // 查询参数
 const searchParams = ref({
@@ -32,11 +34,13 @@ const fetchStatements = async () => {
     )
     statementList.value = data.statements
     total.value = data.total
+    // updateChart()
   } catch (error) {
     console.error('获取特朗普言行数据失败:', error)
     // 备用模拟数据
     statementList.value = generateMockData()
     total.value = statementList.value.length
+    // updateChart()
   } finally {
     loading.value = false
   }
@@ -52,6 +56,7 @@ const handleDelete = async (id: string) => {
     await deleteTrumpStatement(id)
     ElMessage.success('删除成功')
     fetchStatements()
+    fetchChartData() // 删除后刷新图表数据
   } catch (error) {
     ElMessage.error('删除失败')
   }
@@ -92,7 +97,8 @@ const generateMockData = (): TrumpStatement[] => {
     likes: Math.floor(Math.random() * 1000000),
     shares: Math.floor(Math.random() * 500000),
     sentiment: sentimentOptions[Math.floor(Math.random() * sentimentOptions.length)] as any,
-    sentiment_score: (Math.random() * 2 - 1).toFixed(2) as any
+    sentiment_score: (Math.random() * 2 - 1).toFixed(2) as any,
+    hawkish_score: Math.floor(Math.random() * 100)
   }))
 }
 
@@ -146,14 +152,171 @@ const formatTime = (time: string) => {
   return d.isValid() ? new Date(d.valueOf()).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '--'
 }
 
+// 获取图表数据：从后端新接口获取聚合好的每日平均鹰派评分
+const fetchChartData = async () => {
+  try {
+    const data = await getHawkishDaily()
+    console.log('图表数据加载完成，后端返回', data.length, '天数据:')
+    console.table(data)
+    updateChart(data)
+  } catch (error) {
+    console.error('获取图表数据失败:', error)
+    updateChart([])
+  }
+}
+
+// 处理图表数据：X轴从2026-02-28开始完整显示每一天，填入后端返回的数据
+const processChartData = (backendData: HawkishDailyData[]) => {
+  // 转换为map方便查找
+  const dailyMap: Record<string, number> = {}
+  backendData.forEach(item => {
+    dailyMap[item.date] = item.avg_score
+  })
+
+  // 生成从2026-02-28到今天的完整日期序列
+  const startDate = dayjs('2026-02-28')
+  const endDate = dayjs()
+  const daysDiff = endDate.diff(startDate, 'day')
+
+  const fullDates: string[] = []
+  const fullAvgScores: (number | null)[] = []
+
+  for (let i = 0; i <= daysDiff; i++) {
+    const currentDate = startDate.add(i, 'day')
+    const dateKey = currentDate.format('YYYY-MM-DD')
+    fullDates.push(dateKey)
+    if (dailyMap[dateKey] !== undefined) {
+      fullAvgScores.push(dailyMap[dateKey])
+    } else {
+      fullAvgScores.push(NaN) // 没有数据的日期留空
+    }
+  }
+
+  return { dates: fullDates, avgScores: fullAvgScores }
+}
+
+// 初始化图表
+const initChart = () => {
+  const chartDom = document.getElementById('hawkish-chart')
+  if (!chartDom) return
+
+  hawkishChart = echarts.init(chartDom)
+
+  const option = {
+    title: {
+      text: '鹰派评分走势（按日平均）',
+      left: 'center',
+      textStyle: {
+        fontSize: 16
+      }
+    },
+    tooltip: {
+      trigger: 'axis',
+      formatter: '日期: {b}<br/>平均鹰派评分: {c}'
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '15%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      data: [],
+      axisLabel: {
+        rotate: 45,
+        fontSize: 11
+      }
+    },
+    yAxis: {
+      type: 'value',
+      min: 0,
+      max: 100,
+      name: '评分'
+    },
+    series: [
+      {
+        name: '平均鹰派评分',
+        data: [],
+        type: 'line',
+        smooth: true,
+        connectNulls: false,
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: 'rgba(245, 108, 108, 0.5)' },
+            { offset: 1, color: 'rgba(245, 108, 108, 0.1)' }
+          ])
+        },
+        lineStyle: {
+          color: '#f56c6c',
+          width: 2
+        },
+        itemStyle: {
+          color: '#f56c6c'
+        }
+      }
+    ]
+  }
+
+  hawkishChart.setOption(option)
+}
+
+// 更新图表数据
+const updateChart = (backendData: HawkishDailyData[] = []) => {
+  if (!hawkishChart) {
+    initChart()
+  }
+  if (!hawkishChart) return
+
+  const { dates, avgScores } = processChartData(backendData)
+
+  const option = {
+    xAxis: {
+      data: dates
+    },
+    series: [
+      {
+        data: avgScores
+      }
+    ]
+  }
+
+  hawkishChart.setOption(option)
+}
+
+// 处理窗口大小变化
+const resizeChart = () => {
+  if (hawkishChart) {
+    hawkishChart.resize()
+  }
+}
+
+window.addEventListener('resize', resizeChart)
+
 onMounted(() => {
+  // 先初始化图表，再获取数据（确保DOM已经渲染完成）
+  initChart()
   fetchStatements()
+  fetchChartData()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', resizeChart)
+  if (hawkishChart) {
+    hawkishChart.dispose()
+    hawkishChart = null
+  }
 })
 </script>
 
 <template>
   <div>
-    <el-card title="特朗普言行数据">
+    <el-card title="特朗普言行数据">      
+      <!-- 鹰派评分曲线图 -->
+      <div style="margin-bottom: 20px;">
+        <div id="hawkish-chart" style="width: 100%; height: 300px;"></div>
+      </div>
+
       <!-- 搜索栏 -->
       <div class="search-bar" style="margin-bottom: 20px;">
         <el-form :inline="true" class="demo-form-inline">

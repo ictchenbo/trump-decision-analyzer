@@ -42,3 +42,14 @@ export const batchCreateTrumpStatements = (data: Partial<TrumpStatement>[]) => {
 export const deleteTrumpStatement = (id: string) => {
   return request.delete(`/trump-statements/${id}`)
 }
+
+export interface HawkishDailyData {
+  date: string
+  avg_score: number
+  count: number
+}
+
+// 获取从2026-02-28以来每日平均鹰派评分
+export const getHawkishDaily = () => {
+  return request.get<HawkishDailyData[]>('/trump-statements/hawkish-daily')
+}

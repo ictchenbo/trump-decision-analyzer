@@ -176,11 +176,16 @@ async def get_latest_factor_scores():
 
 
 @router.get("/factor-scores/history", response_model=list)
-async def get_factor_scores_history(limit: int = 20):
+async def get_factor_scores_history(limit: int = 200):
     """
     获取因子得分历史，用于趋势展示
     """
-    cursor = db.db["factor_scores"].find({}, {"_id": 0}).sort("computed_at", -1).limit(limit)
+    # 返回从2026-02-28以来的所有历史数据
+    since = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
+    cursor = db.db["factor_scores"]\
+        .find({"computed_at": {"$gte": since}}, {"_id": 0})\
+        .sort("computed_at", -1)\
+        .limit(limit)
     result = [_serialize(doc) for doc in cursor]
     return list(reversed(result))
 
@@ -211,11 +216,16 @@ async def get_latest_war_peace_scores():
 
 
 @router.get("/war-peace/history", response_model=list)
-async def get_war_peace_history(limit: int = 20):
+async def get_war_peace_history(limit: int = 200):
     """
     获取战争与和平指数历史，用于趋势展示
     """
-    cursor = db.db["war_peace_scores"].find({}, {"_id": 0}).sort("computed_at", -1).limit(limit)
+    # 返回从2026-02-28以来的所有历史数据
+    since = datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)
+    cursor = db.db["war_peace_scores"]\
+        .find({"computed_at": {"$gte": since}}, {"_id": 0})\
+        .sort("computed_at", -1)\
+        .limit(limit)
     result = [_serialize(doc) for doc in cursor]
     return list(reversed(result))
 
@@ -229,14 +239,14 @@ async def get_regression_analysis(
 ):
     """
     相关性分析，支持多种分析模式：
-    1. original: 关键指标（X）→ Truth Social 鹰派评分（Y）- 市场影响鹰派
-    2. swap: 鹰派评分（X）→ 关键指标（Y）- 鹰派言论影响市场
-    3. hawkish_lag1: 鹰派评分滞后1天（X）→ 关键指标（Y）- 昨日鹰派影响今日市场
+    1. original: 关键指标（X）→ Truth Social 政策评分（Y）- 市场影响鹰派
+    2. swap: 政策评分（X）→ 关键指标（Y）- 鹰派言论影响市场
+    3. hawkish_lag1: 政策评分滞后1天（X）→ 关键指标（Y）- 昨日鹰派影响今日市场
 
     参数：
     - y_type: 选择因变量 Y 的计算方式 (original模式下):
-      - hawkish_mean = 当日鹰派评分均值（默认）
-      - hawkish_max = 当日鹰派评分最大值
+      - hawkish_mean = 当日政策评分均值（默认）
+      - hawkish_max = 当日政策评分最大值
       - hawkish_ratio = 当日鹰派帖子占比（score >= hawkish_threshold）
       - post_count = 当日帖子数量
       - hawkish_word_avg = 当日鹰派词汇平均计数
@@ -254,7 +264,7 @@ async def get_regression_analysis(
     """
     since = datetime(2026, 2, 28, tzinfo=timezone.utc)
 
-    # ── 1. 按日聚合 Y：Truth Social 鹰派评分多个统计量 ──────────────────
+    # ── 1. 按日聚合 Y：Truth Social 政策评分多个统计量 ──────────────────
     ts_col = db.db["trump_statements"]
     iran_keywords = ["Iran", "oil", "petroleum", "Hormuz", "sanction", "energy", "OPEC", "nuclear"]
     regex = "|".join(iran_keywords)
@@ -353,7 +363,7 @@ async def get_regression_analysis(
         "特朗普支持率":           "支持率",
         "纽约黄金":               "纽约黄金(COMEX)",
         "布油-WTI地缘溢价":       "布油-WTI地缘溢价",
-        "CPI同比":               "CPI同比",
+        # "CPI同比":               "CPI同比",
         "Polymarket弹劾概率":     "弹劾概率",
         "纳斯达克指数":           "纳斯达克指数",
         "道琼斯指数":             "道琼斯指数",
@@ -389,8 +399,8 @@ async def get_regression_analysis(
             all_indicators.update(x_by_day[day].keys())
 
         Y_LABELS = {
-            "hawkish_mean": "鹰派评分均值",
-            "hawkish_max": "鹰派评分最大值",
+            "hawkish_mean": "政策评分均值",
+            "hawkish_max": "政策评分最大值",
             "hawkish_ratio": "鹰派帖子比例",
             "post_count": "发帖数量",
             "hawkish_word_avg": "鹰派词汇均值",
@@ -403,25 +413,25 @@ async def get_regression_analysis(
         if len(common_days) < 3:
             raise HTTPException(status_code=404, detail="交集数据不足，至少需要 3 个有效交易日")
 
-        # 将鹰派评分作为X，添加到x_by_day
+        # 将政策评分作为X，添加到x_by_day
         all_indicators = set(INDICATOR_LABELS.keys())  # 所有市场指标作为Y的候选
 
-        # 如果是滞后1天模式，需要构建滞后鹰派评分：鹰派(t) → 市场(t+1)
+        # 如果是滞后1天模式，需要构建滞后政策评分：鹰派(t) → 市场(t+1)
         if analysis_mode == "hawkish_lag1":
-            # 为每个交易日添加前一天的鹰派评分作为X
+            # 为每个交易日添加前一天的政策评分作为X
             for i, day in enumerate(common_days):
                 if i >= 1:
                     prev_day = common_days[i - 1]
-                    # 将前一天的鹰派评分添加到当前day的X池中
+                    # 将前一天的政策评分添加到当前day的X池中
                     y_data = y_by_day[prev_day]
                     for y_key in ["hawkish_avg", "hawkish_max", "hawkish_ratio", "post_count", "hawkish_word_avg"]:
                         x_key = f"{y_key}_hawkish_lag1"
                         x_by_day[day][x_key] = y_data[y_key]
                         # 添加标签
                         if y_key == "hawkish_avg":
-                            INDICATOR_LABELS[x_key] = f"鹰派评分均值(滞后1天)"
+                            INDICATOR_LABELS[x_key] = f"政策评分均值(滞后1天)"
                         elif y_key == "hawkish_max":
-                            INDICATOR_LABELS[x_key] = f"鹰派评分最大值(滞后1天)"
+                            INDICATOR_LABELS[x_key] = f"政策评分最大值(滞后1天)"
                         elif y_key == "hawkish_ratio":
                             INDICATOR_LABELS[x_key] = f"鹰派帖子比例(滞后1天)"
                         elif y_key == "post_count":
@@ -430,7 +440,7 @@ async def get_regression_analysis(
                             INDICATOR_LABELS[x_key] = f"鹰派词汇均值(滞后1天)"
                         all_indicators.add(x_key)
         else:  # swap 模式 - XY互换
-            # 将当日鹰派评分作为X
+            # 将当日政策评分作为X
             for i, day in enumerate(common_days):
                 y_data = y_by_day[day]
                 for y_key in ["hawkish_avg", "hawkish_max", "hawkish_ratio", "post_count", "hawkish_word_avg"]:
@@ -438,9 +448,9 @@ async def get_regression_analysis(
                     x_by_day[day][x_key] = y_data[y_key]
                     # 添加标签
                     if y_key == "hawkish_avg":
-                        INDICATOR_LABELS[x_key] = f"鹰派评分均值"
+                        INDICATOR_LABELS[x_key] = f"政策评分均值"
                     elif y_key == "hawkish_max":
-                        INDICATOR_LABELS[x_key] = f"鹰派评分最大值"
+                        INDICATOR_LABELS[x_key] = f"政策评分最大值"
                     elif y_key == "hawkish_ratio":
                         INDICATOR_LABELS[x_key] = f"鹰派帖子比例"
                     elif y_key == "post_count":
@@ -502,7 +512,7 @@ async def get_regression_analysis(
 
             # 根据模式获取Y值
             if analysis_mode == "original":
-                # 原始模式：Y是鹰派评分
+                # 原始模式：Y是政策评分
                 y_val = y_by_day[day].get(y_type, y_by_day[day]["hawkish_avg"])
             else:
                 # swap/hawkish_lag1模式：Y是市场指标
@@ -561,30 +571,30 @@ async def get_regression_analysis(
     # 准备Y选项列表 - 根据分析模式返回不同的选项
     if analysis_mode == "original":
         y_options = [
-            {"key": "hawkish_mean", "label": "鹰派评分均值"},
-            {"key": "hawkish_max", "label": "鹰派评分最大值"},
+            {"key": "hawkish_mean", "label": "政策评分均值"},
+            # {"key": "hawkish_max", "label": "政策评分最大值"},
             {"key": "hawkish_ratio", "label": "鹰派帖子比例"},
-            {"key": "post_count", "label": "发帖数量"},
+            # {"key": "post_count", "label": "发帖数量"},
             {"key": "hawkish_word_avg", "label": "鹰派词汇均值"},
         ]
     else:
         # swap/hawkish_lag1模式：Y选项是各个市场指标
         y_options = [
             {"key": "标普500", "label": "标普500"},
-            {"key": "布伦特原油期货", "label": "布伦特原油期货"},
-            {"key": "纽约原油期货", "label": "纽约原油期货(WTI)"},
+            {"key": "纳斯达克指数", "label": "纳斯达克"},
+            {"key": "道琼斯指数", "label": "道琼斯"},
+            {"key": "布伦特原油期货", "label": "布伦特原油"},
+            {"key": "纽约原油期货", "label": "纽约原油"},
             {"key": "波动率指数VIX", "label": "波动率指数VIX"},
+            {"key": "布油-WTI地缘溢价", "label": "布油-WTI地缘溢价"},
+            {"key": "RBOB汽油价格", "label": "RBOB汽油价格"},
+            {"key": "美元指数", "label": "美元指数"},
             {"key": "10年期国债收益率", "label": "10年期国债收益率"},
             {"key": "2年期国债收益率", "label": "2年期国债收益率"},
+            {"key": "纽约黄金", "label": "纽约黄金"},
+            # {"key": "CPI同比", "label": "CPI同比"},
             {"key": "特朗普支持率", "label": "支持率"},
-            {"key": "纽约黄金", "label": "纽约黄金(COMEX)"},
-            {"key": "布油-WTI地缘溢价", "label": "布油-WTI地缘溢价"},
-            {"key": "CPI同比", "label": "CPI同比"},
             {"key": "Polymarket弹劾概率", "label": "弹劾概率"},
-            {"key": "纳斯达克指数", "label": "纳斯达克指数"},
-            {"key": "道琼斯指数", "label": "道琼斯指数"},
-            {"key": "美元指数", "label": "美元指数"},
-            {"key": "RBOB汽油价格", "label": "RBOB汽油价格"},
         ]
 
     return {

@@ -25,3 +25,9 @@ export interface TrumpStatementCreate {
   sentiment?: 'positive' | 'negative' | 'neutral'
   sentiment_score?: number
 }
+
+export interface HawkishDailyData {
+  date: string
+  avg_score: number
+  count: number
+}

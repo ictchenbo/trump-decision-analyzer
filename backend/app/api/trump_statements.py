@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from app.models.trump_statement import TrumpStatement, TrumpStatementCreate, TrumpStatementResponse
 from app.core.database import db
@@ -42,7 +42,7 @@ async def get_trump_statements(
         query["post_time"] = {"$gte": start_time}
     elif end_time:
         query["post_time"] = {"$lte": end_time}
-    
+
     cursor = collection.find(query).sort("post_time", -1).skip(offset).limit(limit)
     statements = []
     for stmt in cursor:
@@ -50,12 +50,52 @@ async def get_trump_statements(
         statements.append(TrumpStatement(**stmt))
 
     total = collection.count_documents(query)
-    
+
     return TrumpStatementResponse(
         total=total,
         statements=statements,
         fetch_time=datetime.utcnow()
     )
+
+@router.get("/hawkish-daily", response_model=list[dict])
+async def get_hawkish_daily_avg():
+    """
+    获取从2026-02-28以来每日平均鹰派评分，用于曲线图展示
+    """
+    collection = db.db["trump_statements"]
+    pipeline = [
+        # 过滤：有鹰派评分，从2026-02-28开始
+        {
+            "$match": {
+                "hawkish_score": {"$exists": True, "$ne": None},
+                "post_time": {"$gte": datetime(2026, 2, 28, 0, 0, 0, tzinfo=timezone.utc)}
+            }
+        },
+        # 按日期分组
+        {
+            "$group": {
+                "_id": {
+                    "$dateToString": {"format": "%Y-%m-%d", "date": "$post_time"}
+                },
+                "avg_score": {"$avg": "$hawkish_score"},
+                "count": {"$sum": 1}
+            }
+        },
+        # 按日期排序
+        {
+            "$sort": {"_id": 1}
+        }
+    ]
+
+    result = []
+    for item in collection.aggregate(pipeline):
+        result.append({
+            "date": item["_id"],
+            "avg_score": round(item["avg_score"], 2),
+            "count": item["count"]
+        })
+
+    return result
 
 @router.get("/{statement_id}", response_model=TrumpStatement)
 async def get_trump_statement(statement_id: str):
