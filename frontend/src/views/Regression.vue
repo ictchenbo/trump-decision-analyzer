@@ -139,25 +139,28 @@ const renderTimeChart = async () => {
 
   if (!timeChart) timeChart = echarts.init(dom, 'dark')
 
-  // 整理已有数据
-  const pointMap: Record<string, {x: number; y: number}> = {}
+  // 整理已有数据 - 保存完整日期和实际值
+  const pointMap: Record<string, {x: number; y: number; fullDate: string}> = {}
   ind.points.forEach(p => {
-    pointMap[p.date] = {x: p.x, y: p.y}
+    pointMap[p.date] = {x: p.x, y: p.y, fullDate: p.date}
   })
 
   // 生成从2026-02-28到今天的完整日期序列
-  const startDate = dayjs('2026-02-28')
-  const endDate = dayjs()
+  const startDateStr = '2026-02-28'
+  const endDate = dayjs().startOf('day')
+  const startDate = dayjs(startDateStr).startOf('day')
   const daysDiff = endDate.diff(startDate, 'day')
 
   const fullDates: string[] = []
+  const fullDatesFull: string[] = []
   const fullX: (number | null)[] = []
   const fullY: (number | null)[] = []
 
   for (let i = 0; i <= daysDiff; i++) {
-    const currentDate = startDate.add(i, 'day')
+    const currentDate = dayjs(startDateStr).add(i, 'day')
     const dateKey = currentDate.format('YYYY-MM-DD')
     fullDates.push(dateKey.slice(5)) // 只显示 MM-DD
+    fullDatesFull.push(dateKey)
     if (pointMap[dateKey]) {
       fullX.push(pointMap[dateKey].x)
       fullY.push(pointMap[dateKey].y)
@@ -194,6 +197,37 @@ const renderTimeChart = async () => {
       backgroundColor: '#1a2235',
       borderColor: '#2d3f55',
       textStyle: { color: '#e2e8f0', fontSize: 18 },
+      formatter: (params: any) => {
+        if (!params || params.length === 0) return ''
+        const idx = params[0].dataIndex
+        const fullDate = fullDatesFull[idx]
+        const actualX = fullX[idx]
+        const actualY = fullY[idx]
+        
+        let result = `<div style="font-weight: bold; margin-bottom: 8px;">日期: ${fullDate}</div>`
+        
+        params.forEach((param: any) => {
+          const color = param.color
+          const name = param.seriesName
+          const normValue = param.value != null ? param.value.toFixed(2) : '-'
+          
+          if (name === xName) {
+            const actualVal = actualX != null ? actualX.toFixed(4) : '-'
+            result += `<div style="margin-bottom: 4px;">
+              <span style="display:inline-block;margin-right:4px;border-radius:10px;width:10px;height:10px;background-color:${color};"></span>
+              ${name}: ${normValue} (归一化) / ${actualVal} (实际)
+            </div>`
+          } else if (name === yName) {
+            const actualVal = actualY != null ? actualY.toFixed(4) : '-'
+            result += `<div style="margin-bottom: 4px;">
+              <span style="display:inline-block;margin-right:4px;border-radius:10px;width:10px;height:10px;background-color:${color};"></span>
+              ${name}: ${normValue} (归一化) / ${actualVal} (实际)
+            </div>`
+          }
+        })
+        
+        return result
+      }
     },
     legend: {
       data: [xName, yName],
@@ -444,7 +478,7 @@ onMounted(fetchData)
               <el-radio-button label="none">无滞后</el-radio-button>
               <el-radio-button label="lag1">滞后1天</el-radio-button>
               <el-radio-button label="lag3">滞后3天</el-radio-button>
-              <el-radio-button label="lag7">滞后7天</el-radio-button>
+              <!-- <el-radio-button label="lag7">滞后7天</el-radio-button> -->
             </el-radio-group>
           </div>
 

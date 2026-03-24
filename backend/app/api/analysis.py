@@ -11,6 +11,45 @@ from app.ingestion.war_peace_ingestor import WAR_PEACE_LABELS, WAR_PEACE_WEIGHTS
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
+# 特朗普政策评分 Y 变量配置
+HAWKISH_Y_CONFIG = {
+    "hawkish_mean": {
+        "label": "政策评分均值",
+        "data_key": "hawkish_avg",
+        "suffix": "_hawkish",
+        "lag_suffix": "_hawkish_lag1",
+        "label_lag": "政策评分均值(滞后1天)"
+    },
+    "hawkish_max": {
+        "label": "政策评分最大值",
+        "data_key": "hawkish_max",
+        "suffix": "_hawkish",
+        "lag_suffix": "_hawkish_lag1",
+        "label_lag": "政策评分最大值(滞后1天)"
+    },
+    "hawkish_ratio": {
+        "label": "鹰派帖子比例",
+        "data_key": "hawkish_ratio",
+        "suffix": "_hawkish",
+        "lag_suffix": "_hawkish_lag1",
+        "label_lag": "鹰派帖子比例(滞后1天)"
+    },
+    # "post_count": {
+    #     "label": "发帖数量",
+    #     "data_key": "post_count",
+    #     "suffix": "_hawkish",
+    #     "lag_suffix": "_hawkish_lag1",
+    #     "label_lag": "发帖数量(滞后1天)"
+    # },
+    # "hawkish_word_avg": {
+    #     "label": "鹰派词汇均值",
+    #     "data_key": "hawkish_word_avg",
+    #     "suffix": "_hawkish",
+    #     "lag_suffix": "_hawkish_lag1",
+    #     "label_lag": "鹰派词汇均值(滞后1天)"
+    # },
+}
+
 def _dt_to_utcz(v: datetime) -> str:
     if v.tzinfo is None:
         v = v.replace(tzinfo=timezone.utc)
@@ -271,10 +310,10 @@ async def get_regression_analysis(
 
     pipeline_y = [
         {"$match": {
-            "source": "Truth Social",
+            # "source": "Truth Social",
             "post_time": {"$gte": since},
             "hawkish_score": {"$exists": True, "$ne": None},
-            "content": {"$regex": regex, "$options": "i"},
+            # "content": {"$regex": regex, "$options": "i"},
         }},
         {"$group": {
             "_id": {
@@ -292,10 +331,10 @@ async def get_regression_analysis(
     # 先取出所有分数列表在Python端计算比例
     pipeline_all = [
         {"$match": {
-            "source": "Truth Social",
+            # "source": "Truth Social",
             "post_time": {"$gte": since},
             "hawkish_score": {"$exists": True, "$ne": None},
-            "content": {"$regex": regex, "$options": "i"},
+            # "content": {"$regex": regex, "$options": "i"},
         }},
         {"$project": {
             "year": {"$year": "$post_time"},
@@ -333,24 +372,27 @@ async def get_regression_analysis(
     if len(y_by_day) < 3:
         raise HTTPException(status_code=404, detail="数据不足，至少需要 3 个有效交易日")
 
-    # ── 2. 按日聚合 X：factor_scores.raw_indicators 各指标均值 ────
-    fs_col = db.db["factor_scores"]
+    # ── 2. 按日聚合 X：直接从 real_time_data 表获取指标数据 ────
+    rt_col = db.db["real_time_data"]
     pipeline_x = [
-        {"$match": {"computed_at": {"$gte": since}, "raw_indicators": {"$exists": True}}},
+        {"$match": {"updated_at": {"$gte": since}}},
         {"$group": {
             "_id": {
-                "y": {"$year": "$computed_at"},
-                "m": {"$month": "$computed_at"},
-                "d": {"$dayOfMonth": "$computed_at"},
+                "y": {"$year": "$updated_at"},
+                "m": {"$month": "$updated_at"},
+                "d": {"$dayOfMonth": "$updated_at"},
+                "name": "$name"
             },
-            "raw_indicators": {"$last": "$raw_indicators"},
+            "value": {"$last": "$value"},
         }},
         {"$sort": {"_id": 1}},
     ]
     x_by_day = {}
-    for doc in fs_col.aggregate(pipeline_x):
+    for doc in rt_col.aggregate(pipeline_x):
         day = f"{doc['_id']['y']:04d}-{doc['_id']['m']:02d}-{doc['_id']['d']:02d}"
-        x_by_day[day] = doc["raw_indicators"]
+        if day not in x_by_day:
+            x_by_day[day] = {}
+        x_by_day[day][doc['_id']['name']] = doc['value']
 
     # 指标中文名映射（与 raw_indicators 存储的 key 对应）
     INDICATOR_LABELS = {
@@ -380,7 +422,7 @@ async def get_regression_analysis(
     if analysis_mode == "original":
         # 原始模式：X(市场) → Y(鹰派)
         # 添加市场指标的滞后变量：X(t-k)
-        LAGS = [1, 3, 7]
+        LAGS = [1, 3] # 7
         for i, day in enumerate(common_days):
             for lag in LAGS:
                 if i < lag:
@@ -398,13 +440,7 @@ async def get_regression_analysis(
         for day in common_days:
             all_indicators.update(x_by_day[day].keys())
 
-        Y_LABELS = {
-            "hawkish_mean": "政策评分均值",
-            "hawkish_max": "政策评分最大值",
-            "hawkish_ratio": "鹰派帖子比例",
-            "post_count": "发帖数量",
-            "hawkish_word_avg": "鹰派词汇均值",
-        }
+        Y_LABELS = {key: config["label"] for key, config in HAWKISH_Y_CONFIG.items()}
         y_label = Y_LABELS.get(y_type, Y_LABELS["hawkish_mean"])
 
     elif analysis_mode in ["swap", "hawkish_lag1"]:
@@ -422,41 +458,22 @@ async def get_regression_analysis(
             for i, day in enumerate(common_days):
                 if i >= 1:
                     prev_day = common_days[i - 1]
-                    # 将前一天的政策评分添加到当前day的X池中
                     y_data = y_by_day[prev_day]
-                    for y_key in ["hawkish_avg", "hawkish_max", "hawkish_ratio", "post_count", "hawkish_word_avg"]:
-                        x_key = f"{y_key}_hawkish_lag1"
-                        x_by_day[day][x_key] = y_data[y_key]
-                        # 添加标签
-                        if y_key == "hawkish_avg":
-                            INDICATOR_LABELS[x_key] = f"政策评分均值(滞后1天)"
-                        elif y_key == "hawkish_max":
-                            INDICATOR_LABELS[x_key] = f"政策评分最大值(滞后1天)"
-                        elif y_key == "hawkish_ratio":
-                            INDICATOR_LABELS[x_key] = f"鹰派帖子比例(滞后1天)"
-                        elif y_key == "post_count":
-                            INDICATOR_LABELS[x_key] = f"发帖数量(滞后1天)"
-                        elif y_key == "hawkish_word_avg":
-                            INDICATOR_LABELS[x_key] = f"鹰派词汇均值(滞后1天)"
+                    for config_key, config in HAWKISH_Y_CONFIG.items():
+                        data_key = config["data_key"]
+                        x_key = f"{data_key}{config['lag_suffix']}"
+                        x_by_day[day][x_key] = y_data[data_key]
+                        INDICATOR_LABELS[x_key] = config["label_lag"]
                         all_indicators.add(x_key)
         else:  # swap 模式 - XY互换
             # 将当日政策评分作为X
             for i, day in enumerate(common_days):
                 y_data = y_by_day[day]
-                for y_key in ["hawkish_avg", "hawkish_max", "hawkish_ratio", "post_count", "hawkish_word_avg"]:
-                    x_key = f"{y_key}_hawkish"
-                    x_by_day[day][x_key] = y_data[y_key]
-                    # 添加标签
-                    if y_key == "hawkish_avg":
-                        INDICATOR_LABELS[x_key] = f"政策评分均值"
-                    elif y_key == "hawkish_max":
-                        INDICATOR_LABELS[x_key] = f"政策评分最大值"
-                    elif y_key == "hawkish_ratio":
-                        INDICATOR_LABELS[x_key] = f"鹰派帖子比例"
-                    elif y_key == "post_count":
-                        INDICATOR_LABELS[x_key] = f"发帖数量"
-                    elif y_key == "hawkish_word_avg":
-                        INDICATOR_LABELS[x_key] = f"鹰派词汇均值"
+                for config_key, config in HAWKISH_Y_CONFIG.items():
+                    data_key = config["data_key"]
+                    x_key = f"{data_key}{config['suffix']}"
+                    x_by_day[day][x_key] = y_data[data_key]
+                    INDICATOR_LABELS[x_key] = config["label"]
                     all_indicators.add(x_key)
 
         # 对于swap和hawkish_lag1，Y就是市场指标
@@ -499,24 +516,33 @@ async def get_regression_analysis(
         x_vals = []
         y_vals = []
         points = []
-        last_known = None
+        last_known_x = None
+        last_known_y = None
 
         for day in common_days:
+            # 处理 X 值
             xv = x_by_day[day].get(ind)
             if xv is not None:
-                last_known = xv
-            elif last_known is not None:
-                xv = last_known
+                last_known_x = xv
+            elif last_known_x is not None:
+                xv = last_known_x
             if xv is None:
                 continue
 
-            # 根据模式获取Y值
+            # 处理 Y 值
             if analysis_mode == "original":
                 # 原始模式：Y是政策评分
-                y_val = y_by_day[day].get(y_type, y_by_day[day]["hawkish_avg"])
+                config = HAWKISH_Y_CONFIG.get(y_type, HAWKISH_Y_CONFIG["hawkish_mean"])
+                data_key = config["data_key"]
+                y_val = y_by_day[day].get(data_key, y_by_day[day]["hawkish_avg"])
+                last_known_y = y_val
             else:
-                # swap/hawkish_lag1模式：Y是市场指标
+                # swap/hawkish_lag1模式：Y是市场指标，也做前向填充
                 y_val = x_by_day[day].get(y_type)
+                if y_val is not None:
+                    last_known_y = y_val
+                elif last_known_y is not None:
+                    y_val = last_known_y
                 if y_val is None:
                     continue
                 y_val = float(y_val)
@@ -571,11 +597,8 @@ async def get_regression_analysis(
     # 准备Y选项列表 - 根据分析模式返回不同的选项
     if analysis_mode == "original":
         y_options = [
-            {"key": "hawkish_mean", "label": "政策评分均值"},
-            # {"key": "hawkish_max", "label": "政策评分最大值"},
-            {"key": "hawkish_ratio", "label": "鹰派帖子比例"},
-            # {"key": "post_count", "label": "发帖数量"},
-            {"key": "hawkish_word_avg", "label": "鹰派词汇均值"},
+            {"key": key, "label": config["label"]}
+            for key, config in HAWKISH_Y_CONFIG.items()
         ]
     else:
         # swap/hawkish_lag1模式：Y选项是各个市场指标
